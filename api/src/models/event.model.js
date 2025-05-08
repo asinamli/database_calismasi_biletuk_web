@@ -47,6 +47,11 @@ const eventSchema = new mongoose.Schema(
       ref: 'User',
       required: [true, 'Organizatör ID zorunludur'],
     },
+    status: {
+      type: String,
+      enum: ['active', 'cancelled', 'completed'],
+      default: 'active',
+    },
     isApproved: {
       type: Boolean,
       default: false,

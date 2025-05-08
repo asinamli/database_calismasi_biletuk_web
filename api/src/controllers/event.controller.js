@@ -9,8 +9,11 @@ exports.getEvents = async (req, res) => {
     // Sorgu parametrelerini al
     const { category, search, page = 1, limit = 10 } = req.query;
 
-    // Sorgu oluştur
-    const query = { isApproved: true };
+    // Sorgu oluştur - sadece onaylı ve aktif etkinlikleri getir
+    const query = { 
+      isApproved: true,
+      status: { $ne: 'cancelled' } // İptal edilmiş etkinlikleri hariç tut
+    };
 
     // Kategori filtresi
     if (category) {
@@ -47,6 +50,73 @@ exports.getEvents = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Etkinlikler getirilemedi',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Admin için tüm etkinlikleri getir (onaylı/onaysız)
+// @route   GET /api/events/all
+// @access  Private/Admin
+exports.getAllEvents = async (req, res) => {
+  try {
+    const events = await Event.find()
+      .populate('category', 'name')
+      .populate('organizerId', 'username email')
+      .sort({ date: 1 });
+
+    res.status(200).json({
+      success: true,
+      count: events.length,
+      data: events,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Etkinlikler getirilemedi',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Etkinlik durumunu güncelle
+// @route   PUT /api/events/:id/status
+// @access  Private/Admin
+exports.updateEventStatus = async (req, res) => {
+  try {
+    const { status } = req.body;
+
+    // Status validasyonu
+    const validStatuses = ['active', 'cancelled', 'completed'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Geçersiz etkinlik durumu',
+      });
+    }
+
+    const event = await Event.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true, runValidators: true }
+    ).populate('category', 'name').populate('organizerId', 'username email');
+
+    if (!event) {
+      return res.status(404).json({
+        success: false,
+        message: 'Etkinlik bulunamadı',
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: event,
+      message: 'Etkinlik durumu başarıyla güncellendi',
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Etkinlik durumu güncellenemedi',
       error: error.message,
     });
   }
@@ -218,5 +288,61 @@ exports.getFeaturedEvents = async (req, res) => {
   } catch (error) {
     console.error("Öne çıkan etkinlikler getirilirken hata:", error);
     return res.status(500).json({ message: "Sunucu hatası" });
+  }
+};
+
+// @desc    Etkinlik oluştur (Admin için)
+// @route   POST /api/events
+// @access  Private/Admin
+exports.createEvent = async (req, res) => {
+  try {
+    const { 
+      title, 
+      description, 
+      date, 
+      location, 
+      price, 
+      availableTickets,
+      category,
+      organizerId,
+      coverImage,
+      sliderImages 
+    } = req.body;
+
+    // Kategori kontrolü
+    const categoryExists = await Category.findById(category);
+    if (!category || !categoryExists) {
+      return res.status(400).json({
+        success: false,
+        message: 'Geçerli bir kategori seçilmelidir',
+      });
+    }
+
+    const event = await Event.create({
+      title,
+      description,
+      date,
+      location,
+      price,
+      availableTickets,
+      category,
+      organizerId,
+      coverImage: coverImage || '',
+      sliderImages: sliderImages || [],
+      status: 'active',
+      isApproved: true // Admin oluşturduğu için otomatik onaylı
+    });
+
+    res.status(201).json({
+      success: true,
+      data: event,
+      message: 'Etkinlik başarıyla oluşturuldu',
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Etkinlik oluşturulamadı',
+      error: error.message,
+    });
   }
 };
